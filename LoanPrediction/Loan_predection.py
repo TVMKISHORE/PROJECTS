@@ -6,6 +6,7 @@ from sklearn.ensemble import GradientBoostingClassifier  #GBM algorithm
 from sklearn import cross_validation, metrics   #Additional scklearn functions
 from sklearn.grid_search import GridSearchCV   #Perforing grid search
 import matplotlib.pylab as plt
+import math as ma
 #matplotlib inline
 from matplotlib.pylab import rcParams
 
@@ -15,6 +16,7 @@ train = pd.read_csv(path)
 
 target = 'Disbursed'
 IDcol='Loan_ID'
+train['Disbursed']=np.where(train.Loan_Status=='Y', 1, 0)
 #**********************************************************
 #Before proceeding further, lets define a function which will help us create GBM models and perform cross-validation.
 
@@ -34,8 +36,11 @@ def modelfit(alg, dtrain, predictors, performCV=True, printFeatureImportance=Tru
     print ("Accuracy : %.4g" % metrics.accuracy_score(dtrain['Disbursed'].values, dtrain_predictions))
     print ("AUC Score (Train): %f" % metrics.roc_auc_score(dtrain['Disbursed'], dtrain_predprob))
     
-    if performCV:
-        print ("CV Score : Mean - %.7g | Std - %.7g | Min - %.7g | Max - %.7g" % np.mean(cv_score),np.std(cv_score),np.min(cv_score),np.max(cv_score))
+    if performCV:      
+        print ("CV Score : Mean - %.7g" % np.mean(cv_score))
+        print("Std - %.7g" % np.std(cv_score))
+        print ("Min - %.7g" % np.min(cv_score))
+        print ("Max - %.7g" % np.max(cv_score))
  
     #Print Feature Importance:
     if printFeatureImportance:
@@ -46,7 +51,8 @@ def modelfit(alg, dtrain, predictors, performCV=True, printFeatureImportance=Tru
 #without any tuning. Lets find out what it gives:
 #Choose all predictors except target & IDcols
 #predictors = [x for x in train.columns if x not in [target, IDcol,'gender','education']]
-predictors = [x for x in train.columns if x not in [target, IDcol,'P_A_Urban','Dep__3+','gender','education']]
+predictors = [x for x in train.columns if x not in [target,'Dependents1','Dependents2','Property_AreaRural','Property_AreaSemiurban','Loan_Status','Unnamed: 0',]]
+#predictors = [x for x in train.columns if x not in [target,'Loan_Status','Unnamed: 0',]]
 gbm0 = GradientBoostingClassifier(random_state=10)
 #gbm0=GradientBoostingClassifier(learning_rate=0.1, n_estimators=80,max_depth=1, min_samples_split=3, min_samples_leaf=1, subsample=0.85, random_state=10)
 modelfit(gbm0, train, predictors)        
@@ -54,6 +60,14 @@ modelfit(gbm0, train, predictors)
 #Feature Imp
 Fea_imp1=sorted(zip(gbm0.feature_importances_,predictors))
 
+#test file accuracy
+predictors_test = [x for x in test.columns if x not in [IDcol,target,'Loan_Status','Unnamed: 0',]]
+dtest_predprob=gbm0.predict(test[predictors_test])
+dtest_predprob=pd.DataFrame(dtest_predprob)
+dtest_predprob.columns=["Loan_Status"]
+up_load_toAV=pd.concat([test["Loan_ID"],dtest_predprob["Loan_Status"]],axis=1)
+up_load_toAV["Loan_Status"]=np.where(up_load_toAV.Loan_Status==1, 'Y', 'N')
+up_load_toAV.to_csv('up_load_toAV.csv',index=False)
 #Model Report
 #Accuracy : 0.9042
 #AUC Score (Train): 0.976097
@@ -108,3 +122,138 @@ param_grid = param_test5, scoring='roc_auc',n_jobs=4,iid=False, cv=5)
 gsearch5.fit(train[predictors],train[target])
 gsearch5.grid_scores_, gsearch5.best_params_, gsearch5.best_score_
 #concluded that .85 is the best subsample
+
+
+
+
+
+
+#---------------------------------------------------------------------
+# Try with basic logistic regression
+#---------------------------------------------------------------------
+import pandas as pd
+import numpy as np
+
+target = 'Disbursed'
+IDcol='Loan_ID'
+train['Disbursed']=np.where(train.Loan_Status=='Y', 1, 0)
+
+
+from sklearn.linear_model import LogisticRegression
+predictors = [x for x in train.columns if x not in ['Loan_Amount_Term.x','Dependents1','Dependents2','Property_AreaRural','Property_AreaSemiurban',target,'Loan_Status','Unnamed: 0',]]
+#predictors = [x for x in train.columns if x not in [target,'Loan_Status','Unnamed: 0',]]
+X=train[predictors]
+y=train['Disbursed']
+#feature scaling
+X["Loan_Amount_Term.x"]=(X["Loan_Amount_Term.x"]-X["Loan_Amount_Term.x"].mean())/10
+X["CoapplicantIncome.x"]=((X["CoapplicantIncome.x"])-X["CoapplicantIncome.x"].mean())/1000
+X["LoanAmount.x"]=((X["LoanAmount.x"])-X["LoanAmount.x"].mean())/100
+X['ApplicantIncome.x']=((X['ApplicantIncome.x'])-X['ApplicantIncome.x'].mean())/1000
+
+X["Loan_Amount_Term.x"]=ma.log(X["Loan_Amount_Term.x"])
+X["CoapplicantIncome.x"]=ma.log(X["CoapplicantIncome.x"])
+X["LoanAmount.x"]=ma.log((X["LoanAmount.x"]))
+X['ApplicantIncome.x']=ma.log(X['ApplicantIncome.x'])
+
+#add polynomial features
+X['LAT_C']=X["Loan_Amount_Term.x"]*X["CoapplicantIncome.x"]
+X['C_LA']=X["CoapplicantIncome.x"]*X["LoanAmount.x"]
+X['LA_AI']=X["LoanAmount.x"]*X['ApplicantIncome.x']
+X['AI_LAT']=X['ApplicantIncome.x']*X["Loan_Amount_Term.x"]
+
+X['LAT_C_S']=X["Loan_Amount_Term.x"]*X["CoapplicantIncome.x"]**2
+X['C_LA_S']=X["CoapplicantIncome.x"]*X["LoanAmount.x"]**2
+X['LA_AI_S']=X["LoanAmount.x"]*X['ApplicantIncome.x']**2
+X['AI_LAT_S']=X['ApplicantIncome.x']*X["Loan_Amount_Term.x"]**2
+
+X['LAT_C_C']=(X["Loan_Amount_Term.x"]**2)*X["CoapplicantIncome.x"]
+X['C_LA_C']=(X["CoapplicantIncome.x"]**2)*X["LoanAmount.x"]
+X['LA_AI_C']=(X["LoanAmount.x"]**2)*X['ApplicantIncome.x']
+X['AI_LAT_C']=(X['ApplicantIncome.x']**2)*X["Loan_Amount_Term.x"]
+
+X['LAT_Cs']=X["Loan_Amount_Term.x"]*X["CoapplicantIncome.x"]*X["LoanAmount.x"]
+X['C_LAs']=X["CoapplicantIncome.x"]*X["LoanAmount.x"]*X['ApplicantIncome.x']
+X['LA_AIs']=X["LoanAmount.x"]*X['ApplicantIncome.x']*X["Loan_Amount_Term.x"]
+X['LA_LATs']=X["CoapplicantIncome.x"]*X["LoanAmount.x"]*X["Loan_Amount_Term.x"]
+
+
+#-----------------------------------------
+#logistic regression
+#-----------------------------------------
+
+#Training with test set
+
+logreg = LogisticRegression()
+logGS=GridSearchCV(estimator=logreg, 
+             param_grid = param_test1, scoring='roc_auc',n_jobs=4,iid=False, cv=5)
+logreg = LogisticRegression(C=1e9,fit_intercept=True,dual=False,penalty='l2',solver="liblinear", tol=0.000001, max_iter=200000, class_weight=None, n_jobs=4, verbose=0,intercept_scaling=1.0, multi_class='ovr', random_state=None)
+c=np.arange(1000000000.0,10000000000.0,100000000)
+param_test1 = [{'C':c}]
+logGS.fit(X, y)
+logreg.fit(X, y)
+
+#vaidation on train set
+y_pred = logreg.predict(X)
+import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import roc_auc_score
+confusion_matrix = confusion_matrix(y, y_pred)
+print('AUC Score: ',roc_auc_score(y, y_pred))
+print ('Accuracy: ', accuracy_score(y, y_pred))
+
+#predection on test set
+predictors = [x for x in test.columns if x not in ['Loan_Amount_Term.y','Dependents1','Dependents2','Property_AreaRural','Property_AreaSemiurban',IDcol,target,'Loan_Status','Unnamed: 0',]]
+predictors_test=['Credit_History', 'CoapplicantIncome', 'LoanAmount', 'ApplicantIncome']
+X=test[predictors_test]
+#X.columns=['Credit_History.x', 'CoapplicantIncome.x',  'LoanAmount.x','ApplicantIncome.x']
+#X.columns=['Credit_History', 'CoapplicantIncome', 'LoanAmount','ApplicantIncome']
+
+y_test = logreg.predict(X)
+
+dtest_predprob=pd.DataFrame(y_test)
+dtest_predprob.columns=["Loan_Status"]
+up_load_toAV=pd.concat([test["Loan_ID"],dtest_predprob["Loan_Status"]],axis=1)
+up_load_toAV["Loan_Status"]=np.where(up_load_toAV.Loan_Status==1, 'Y', 'N')
+up_load_toAV.to_csv('up_load_toAV.csv',index=False)
+
+
+#-----------------------------------------
+#Support vector Machine application 
+#-----------------------------------------
+
+#train the model 
+
+from sklearn import svm
+#between .6909 and .691
+#clf = svm.SVC(C=.6909067129)
+clf = svm.SVC(C=.6909067140011100899)
+Svmmodel=clf.fit(X, y) 
+y_pred=Svmmodel.predict(X)
+
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import roc_auc_score
+confusion_matrix = confusion_matrix(y, y_pred)
+print('AUC Score: ',roc_auc_score(y, y_pred))
+print ('Accuracy: ', accuracy_score(y, y_pred))
+
+#predict the test set
+
+predictors_test=['Credit_History', 'CoapplicantIncome', 'LoanAmount', 'ApplicantIncome']
+X=test[predictors_test]
+
+y_test = Svmmodel.predict(X)
+
+dtest_predprob=pd.DataFrame(y_test)
+dtest_predprob.columns=["Loan_Status"]
+up_load_toAV=pd.concat([test["Loan_ID"],dtest_predprob["Loan_Status"]],axis=1)
+up_load_toAV["Loan_Status"]=np.where(up_load_toAV.Loan_Status==1, 'Y', 'N')
+up_load_toAV.to_csv('up_load_toAV.csv',index=False)
+
+#AUC Score:  0.97635135135
+#Accuracy:  0.985416666667
+
+#Thgis model over fits and performed very mad on LB
+#  Accuracy :0.65972
+
