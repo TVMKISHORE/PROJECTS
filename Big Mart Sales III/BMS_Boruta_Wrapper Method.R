@@ -131,7 +131,8 @@ axis(side = 1,las=2,labels = names(Labels),
 #--------------------------------------------------------------
 #Conclusion 
 ##Since Boruta is computationally expensive , I ran the package twice.
-##1. A Model build withthe features given by first Boruta and then tried with combinations with features given by second Bauta.
-##2. looks like only can add value "prod_code_num"
+##1. A Model build withthe features given by first Boruta and then tried with 
+##   combinations with features given by second Bauta.
+##2. looks like only one can add value from second run ie: "prod_code_num"
 #--------------------------------------------------------------
 
