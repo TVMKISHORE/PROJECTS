@@ -1,9 +1,12 @@
+#--------------------------------------------------------------------------------------------------------
+#http://topepo.github.io/caret/using-your-own-model-in-train.html#introduction-1
+#--------------------------------------------------------------------------------------------------------
 install.packages("ggplot2")       #Dependents for CARET
 install.packages("scales")        #Dependents for CARET
 install.packages("ModelMetrics")  #Dependents for CARET
+install.packages("caret", dependencies = c("Depends", "Suggests"))
 library("ModelMetrics")           #Dependents for CARET
 library("ggplot2")                #Dependents for CARET 
-install.packages("caret", dependencies = c("Depends", "Suggests"))
 library("caret")
 
 #--------------------------------------------------------------------------------------------------------
@@ -115,7 +118,7 @@ model_xgb$bestTun
 #121      50         1 0.3     0              0.8                1 0.6111111
 #-------------------------------------------------------Output
 #--------------------------------------------------------------------------------------------------------
-##Parameter tuning using Caret--Tuning BGM
+##Parameter tuning using Caret--Tuning GBM
 #--------------------------------------------------------------------------------------------------------
 fitControl <- trainControl(
   method = "repeatedcv", # Repeated Cross validation   
@@ -167,24 +170,13 @@ model_rf
 #The final value used for the model was mtry = 2. 
 #-------------------------------------------------------Output
 #--------------------------------------------------------------------------------------------------------
-##Parameter tuning using Caret--Tuning nnet
+##Parameter tuning using Caret--Tuning nnet(Nural Networks)
 #--------------------------------------------------------------------------------------------------------
 model_nnet<-train(data.matrix(trainSet[,predictors]),data.matrix(trainSet[,outcomeName]),method='nnet',trControl=fitControl,
                 tuneLength=10)
 load("model_nnet.Rdata")
 save(model_nnet,file="model_nnet.Rdata")
 plot(model_rf)  #model_nnet was named as model_rf by mistake
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -215,17 +207,48 @@ predictors<-c("Credit_History", "LoanAmount","ApplicantIncome", "CoapplicantInco
 #The final values used for the model were n.trees = 10, interaction.depth = 1, shrinkage = 0.05
 #and n.minobsinnode = 3. 
 
-gbm_model_final<- gbm( data.matrix(train_processed[,predictors]),
-                       data.matrix(train$Loan_Status),
-                      n.trees = 10,
-                      interaction.depth = 1,
-                      n.minobsinnode = 3,
-                      shrinkage = 0.05
+install.packages('gbm')
+library('gbm')
+gbm_model_final<- gbm( Loan_Status ~ Credit_History+LoanAmount+ApplicantIncome+CoapplicantIncome,
+                       data=train_processed, 
+                       distribution="bernoulli",   #This is what used in the above CV model (model_gbm$finalModel)
+                       n.trees = 10,
+                       interaction.depth = 1,
+                       n.minobsinnode = 3,
+                       shrinkage = 0.05
         )
 
 
-load("model_rf.Rdata")
-y_pred<-predict.train(object=model_rf,testSet[,predictors],type="raw")
+
+save(gbm_model_final,file="gbm_model_final.Rdata")
+load('gbm_model_final.Rdata')
+
+
+#---------------------------------------------------------------------------------------------------
+# Generate LB Score with filan model
+#---------------------------------------------------------------------------------------------------
+y_pred<- predict(gbm_model_final,test_transformed[,predictors],n.trees = 10,type="link")
+test_result =as.data.frame(test["Loan_ID"])
+y_pred<- as.data.frame(y_pred)
+test_result['Loan_Status'] = as.character(y_pred$y_pred)
+Loan_file=test_result
+Loan_file$Loan_Status[Loan_file$Loan_Status==1.00213505847377] <- "Y"
+Loan_file$Loan_Status[Loan_file$Loan_Status==0.785989213515357] <- "Y"
+Loan_file$Loan_Status[Loan_file$Loan_Status==-0.224335381813572] <- "N"
+write.csv(Loan_file,file='Result_GBM.csv')
+
+
+
+
+
+
+
+
+
+#---------------------------------------------------------------------------------------------------
+# Generate LB Score with CV models
+#---------------------------------------------------------------------------------------------------
+y_pred<-predict.train(object=model_gbm,testSet[,predictors],type="raw")
 y_pred<- predict(model_gbm,data.matrix(test_transformed[,predictors]))
 
 test_result =as.data.frame(test["Loan_ID"])
@@ -236,4 +259,12 @@ Loan_file$Loan_Status[Loan_file$Loan_Status==1] <- "Y"
 Loan_file$Loan_Status[Loan_file$Loan_Status==0] <- "N"
 
 write.csv(Loan_file,file='Result_GBM.csv')
+#---------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------
+
+
+
+
+
+
 

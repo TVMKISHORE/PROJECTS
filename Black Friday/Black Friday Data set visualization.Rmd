@@ -1,0 +1,294 @@
+---
+title: "Black Friday Dataset from AV"
+author: "KISHORE"
+date: "January 28, 2017"
+output: html_document
+---
+### Data explored here istaken from Analytics Vidya practice problem.
+### The code to create new features is taken from another member (vopani)
+
+loading libraries
+```{r}
+library(dummies)
+library(plyr)
+library(ggplot2)
+```
+
+
+```{r}
+train <- read.csv("C:/Users/Admin/Downloads/Black Friday/train_oSwQCTC/train.csv", stringsAsFactors=F)
+```
+
+
+onehot-encoding city variable
+```{r}
+X_train <- train
+X_train <- dummy.data.frame(X_train, names=c("City_Category"), sep="_")
+```
+
+
+Converting age variable to numeric
+```{r}
+X_train$Age[X_train$Age == "0-17"] <- "15"
+X_train$Age[X_train$Age == "18-25"] <- "21"
+X_train$Age[X_train$Age == "26-35"] <- "30"
+X_train$Age[X_train$Age == "36-45"] <- "40"
+X_train$Age[X_train$Age == "46-50"] <- "48"
+X_train$Age[X_train$Age == "51-55"] <- "53"
+X_train$Age[X_train$Age == "55+"] <- "60"
+X_train$Age <- as.integer(X_train$Age)
+```
+
+
+Converting stay in current city to numeric
+```{r}
+X_train$Stay_In_Current_City_Years[X_train$Stay_In_Current_City_Years == "4+"] <- "4"
+X_train$Stay_In_Current_City_Years <- as.integer(X_train$Stay_In_Current_City_Years)
+```
+
+converting Gender to binary
+```{r}
+X_train$Gender <- ifelse(X_train$Gender == "F", 1, 0)
+```
+
+
+Feature representing the count of each user
+```{r}
+user_count <- ddply(X_train, .(User_ID), nrow)
+names(user_count)[2] <- "User_Count"
+X_train <- merge(X_train, user_count, by="User_ID")
+```
+
+Feature representing the count of each product
+```{r}
+product_count <- ddply(X_train, .(Product_ID), nrow)
+names(product_count)[2] <- "Product_Count"
+X_train <- merge(X_train, product_count, by="Product_ID")
+```
+
+
+Feature representing the average Purchase of each product
+```{r}
+product_mean <- ddply(X_train, .(Product_ID), summarize, Product_Mean=mean(Purchase))
+X_train <- merge(X_train, product_mean, by="Product_ID")
+
+```
+
+
+
+feature representing the proportion of times the user purchases the product more than the product's average
+```{r}
+X_train$flag_high <- ifelse(X_train$Purchase > X_train$Product_Mean,1,0)
+user_high <- ddply(X_train, .(User_ID), summarize, User_High=mean(flag_high))
+X_train <- merge(X_train, user_high, by="User_ID")
+```
+
+
+
+Add User_High column to the original dataset also
+```{r}
+train$flag_high <- ifelse(X_train$Purchase > X_train$Product_Mean,1,0)
+user_high <- ddply(train, .(User_ID), summarize, User_High=mean(flag_high))
+train <- merge(train, user_high, by="User_ID")
+X_train <- merge(X_train, user_high, by="User_ID")
+```
+
+
+Structure of the train dataset
+```{r}
+str(train)
+```
+
+Structure of the X_train dataset which has newly created 
+```{r}
+str(X_train)
+```
+
+
+
+Random sample the data set. Just 5% of the data set was take as a sample to explore 
+```{r}
+library(caTools)
+set.seed(3000)
+spl = sample.split(train$User_ID, SplitRatio = 0.05)
+Pdata=train[spl,]
+Pdata$Marital_Status <- ifelse(Pdata$Marital_Status == 1, 'M', 'UM')
+```
+
+
+How is the distribution of Purchases?.
+The distributions right skewed and the mean amd meedian for the sample and the population are approximately same.
+```{r}
+summary(X_train[spl,]$Purchase)
+summary(X_train$Purchase)
+```
+
+
+Logtransfermation 
+```{r}
+library(gridExtra) 
+logScale<-qplot(x=log10(Purchase),data=Pdata) # x ais is not scaled by log10
+countScale<-ggplot(aes(x=Purchase),data=Pdata)+geom_histogram()+scale_x_log10() # X-axis is scaled by log 10
+grid.arrange(logScale,countScale,ncol=2)
+```
+
+
+Look at the gender inbalance in the data set
+```{r}
+table(Pdata$Gender)   
+```
+
+
+The below frequency poligon says that the proportion of male customer is higher than female in all range of purchases
+```{r}
+ggplot(aes(x = Purchase, y = ..count../sum(..count..)), data = subset(Pdata, !is.na(Gender))) + 
+  geom_freqpoly(aes(color = Gender), binwidth=10) + 
+  scale_x_continuous(limits = c(0, 27723), breaks = seq(0, 27723, 50)) + 
+  xlab('Purchases') + 
+  ylab('Proportion of customers with that Purchase amount')
+```
+
+
+Lets zoom more on the right side , I think some places feamale shoppers overtake males in the case of higher purchases
+```{r}
+ggplot(aes(x = Purchase, y = ..count../sum(..count..)), data = subset(Pdata, !is.na(Gender))) + 
+  geom_freqpoly(aes(color = Gender), binwidth=10) + 
+  scale_x_continuous(limits = c(20000, 27723), breaks = seq(0, 1000, 50)) + 
+  xlab('Purchases') + 
+  ylab('Proportion of customers with that Purchase amount')
+```
+
+
+This is where the feamle proportions overtake teh Male proportions 
+```{r}
+ggplot(aes(x = Purchase, y = ..count../sum(..count..)), data = subset(Pdata, !is.na(Gender))) + 
+  geom_freqpoly(aes(color = Gender), binwidth=10) + 
+  scale_x_continuous(limits = c(1500, 2000), breaks = seq(0, 1000, 50)) + 
+  xlab('Purchases') + 
+  ylab('Proportion of customers with that Purchase amount')
+```
+
+
+How prices are distributed 
+The below graph shows that the prices are spread in a multy model distribution 
+```{r}
+ggplot(train[spl,],aes(x=Purchase))+geom_histogram(binwidth = 1)
+ggplot(train,aes(x=Purchase))+geom_density()
+ggplot(train,aes(x=Purchase))+geom_dotplot(binwidth = 100)
+```
+
+
+Purchase by gender, statistical exploration. Females distribution is more skewed right
+```{r}
+by(Pdata$Purchase,Pdata$Gender,summary)   
+```
+There is a gender imbalance 
+
+
+Even though there are more outliers in the feamle box plot, their proportion is less compared to male in the case of higher purchases. 
+```{r}
+qplot(x=Gender, y=Purchase,data=subset(Pdata, !is.na(Gender)),geom='boxplot')
+```
+
+
+
+Outlier : is 1.5 times IQR distance from the median.
+Set the limits to remove the outliers.
+So when we see these plots it is clear that the female customers shoppe less than the male
+```{r}
+qplot(x=Gender, y=Purchase,data=subset(Pdata, !is.na(Gender)),geom='boxplot',ylim=c(0,15750))  
+```
+
+
+
+Set the limits to remove the outliers
+To match the graph details with the above statistics use the coord_cartesian function
+```{r}
+qplot(x=Gender, y=Purchase,data=subset(Pdata, !is.na(Gender)),geom='boxplot')+
+scale_y_continuous(limits=c(0,15750))  
+
+```
+
+
+This is to summarize the Purchases by Gender numerically.
+Coord cartesian will not exclude any observation while summarizing , they will be just left while displaying on the graph, when a ylim is given
+```{r}
+by(Pdata$Purchase,Pdata$Gender,summary) 
+qplot(x=Gender, y=Purchase,data=subset(Pdata, !is.na(Gender)),geom='boxplot')+coord_cartesian(ylim=c(0,15750))
+```
+
+
+
+product_count is the number of times the product is appearing. 
+This means products appearing from 50 to 500 are sold more frequently compared to 1000 to the end.
+This means very less proportion ifrequently sold
+```{r}
+ggplot(X_train,aes(x=Product_Count))+xlab('Number of times a product sold')+geom_density() 
+```
+
+
+
+
+Below plot shows the distribution of purchase frequencies and distribution of Occupation frequencies and age frequencies as weoll 
+```{r}
+library(gridExtra) 
+pl1<-ggplot(X_train[spl,],aes(x=Purchase))+geom_density()+ylab('Frequancy')     
+pl2<-ggplot(X_train[spl,],aes(x=Occupation))+geom_density()+ylab('Shopper frequency') 
+pl3<-ggplot(X_train[spl,],aes(x=Age))+geom_density()+ylab('Frequancy')
+grid.arrange(pl1,pl2,pl3,ncol=1)
+```
+
+
+
+If we take product frequency(Product_count) , the city C has higher frequency 
+```{r}
+pl1<-ggplot(X_train[spl,],aes(x=Product_Count,fill=City_Category_A))+geom_density()+facet_grid(City_Category_A ~.)+
+     scale_x_continuous(limits = c(0,2000))
+pl2<-ggplot(X_train[spl,],aes(x=Product_Count,fill=City_Category_B))+geom_density()+facet_grid(City_Category_B ~.)+
+     scale_x_continuous(limits = c(0,2000))
+pl3<-ggplot(X_train[spl,],aes(x=Product_Count,fill=City_Category_C))+geom_density()+facet_grid(City_Category_C ~.)+
+     scale_x_continuous(limits = c(0,2000))
+grid.arrange(pl1,pl2,pl3,ncol=1)
+```
+
+
+
+When we zoomed more on the right, City B has more number of products that are sold less frequently 
+```{r}
+pl1<-ggplot(X_train[spl,],aes(x=Product_Count,fill=City_Category_A))+geom_density()+facet_grid(City_Category_A ~.)+
+  scale_x_continuous(limits = c(1500,1700))
+pl2<-ggplot(X_train[spl,],aes(x=Product_Count,fill=City_Category_B))+geom_density()+facet_grid(City_Category_B ~.)+
+  scale_x_continuous(limits = c(1500,1700))
+pl3<-ggplot(X_train[spl,],aes(x=Product_Count,fill=City_Category_C))+geom_density()+facet_grid(City_Category_C ~.)+
+scale_x_continuous(limits = c(1500,1700))
+grid.arrange(pl1,pl2,pl3,ncol=1)
+```
+
+
+
+How Marrital status is effecting the purchase?
+
+Check for imbalance
+```{r}
+table(Pdata$Marital_Status)
+```
+Imbalance observed
+
+```{r}
+by(Pdata$Purchase,Pdata$Marital_Status,summary)   
+```
+
+
+How about the purchases in the case of married an unmarried?
+Unmarried are the frquent shoppers
+```{r}
+ggplot(aes(x = Purchase, y = ..count../sum(..count..)), data = subset(Pdata, !is.na(Marital_Status))) + 
+  geom_freqpoly(aes(color = Marital_Status), binwidth=10) + 
+  scale_x_continuous(limits = c(0, 27723), breaks = seq(0, 27723, 50)) + 
+  xlab('Purchases') + 
+  ylab('Proportion of customers Married and unmarried')
+```
+
+
+
+

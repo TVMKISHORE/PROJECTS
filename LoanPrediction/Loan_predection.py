@@ -71,6 +71,7 @@ up_load_toAV.to_csv('up_load_toAV.csv',index=False)
 #Model Report
 #Accuracy : 0.9042
 #AUC Score (Train): 0.976097
+# LB score 0.73 with Emi feature 
 
 gbm0.feature_importances_
 
@@ -134,14 +135,17 @@ gsearch5.grid_scores_, gsearch5.best_params_, gsearch5.best_score_
 import pandas as pd
 import numpy as np
 
+train['Disbursed']=np.where(train.Loan_Status=='Y', 1, 0)
 target = 'Disbursed'
 IDcol='Loan_ID'
-train['Disbursed']=np.where(train.Loan_Status=='Y', 1, 0)
+
 
 
 from sklearn.linear_model import LogisticRegression
-predictors = [x for x in train.columns if x not in ['Loan_Amount_Term.x','Dependents1','Dependents2','Property_AreaRural','Property_AreaSemiurban',target,'Loan_Status','Unnamed: 0',]]
+#predictors = [x for x in train.columns if x not in ['Loan_Amount_Term.x','Dependents1','Dependents2','Property_AreaRural','Property_AreaSemiurban',target,'Loan_Status','Unnamed: 0',]]
 #predictors = [x for x in train.columns if x not in [target,'Loan_Status','Unnamed: 0',]]
+predictors = ['ApplicantIncome','CoapplicantIncome','LoanAmount','Loan_Amount_Term','Credit_History','EMI']
+#predictors = ['ApplicantIncome','CoapplicantIncome','LoanAmount','Loan_Amount_Term','Credit_History']
 X=train[predictors]
 y=train['Disbursed']
 #feature scaling
@@ -178,12 +182,14 @@ X['LA_LATs']=X["CoapplicantIncome.x"]*X["LoanAmount.x"]*X["Loan_Amount_Term.x"]
 
 
 #-----------------------------------------
-#logistic regression
+# Smiple logistic regression
 #-----------------------------------------
+from sklearn.linear_model import LogisticRegression
 
-#Training with test set
-
-logreg = LogisticRegression()
+#Training with train set
+#logreg = LogisticRegression(C=.0784191269867)   #1 is good
+logreg = LogisticRegression(C=1)   #1 is good
+logreg.fit(X, y)
 logGS=GridSearchCV(estimator=logreg, 
              param_grid = param_test1, scoring='roc_auc',n_jobs=4,iid=False, cv=5)
 logreg = LogisticRegression(C=1e9,fit_intercept=True,dual=False,penalty='l2',solver="liblinear", tol=0.000001, max_iter=200000, class_weight=None, n_jobs=4, verbose=0,intercept_scaling=1.0, multi_class='ovr', random_state=None)
@@ -202,20 +208,29 @@ confusion_matrix = confusion_matrix(y, y_pred)
 print('AUC Score: ',roc_auc_score(y, y_pred))
 print ('Accuracy: ', accuracy_score(y, y_pred))
 
+trainf1=train
+trainf1['predected']=y_pred
+trainf1['actual']=train['Disbursed']
+trainf1['Loan_ID']=train['Loan_ID']
+trainf1.to_csv('trainf1.csv',index=False)
+
+
+
 #predection on test set
 predictors = [x for x in test.columns if x not in ['Loan_Amount_Term.y','Dependents1','Dependents2','Property_AreaRural','Property_AreaSemiurban',IDcol,target,'Loan_Status','Unnamed: 0',]]
-predictors_test=['Credit_History', 'CoapplicantIncome', 'LoanAmount', 'ApplicantIncome']
-X=test[predictors_test]
+predictors_test=['ApplicantIncome','CoapplicantIncome','LoanAmount','Loan_Amount_Term','Credit_History','EMI']
+X_t=test[predictors_test]
 #X.columns=['Credit_History.x', 'CoapplicantIncome.x',  'LoanAmount.x','ApplicantIncome.x']
 #X.columns=['Credit_History', 'CoapplicantIncome', 'LoanAmount','ApplicantIncome']
 
-y_test = logreg.predict(X)
+y_test = logreg.predict(X_t)
 
 dtest_predprob=pd.DataFrame(y_test)
 dtest_predprob.columns=["Loan_Status"]
 up_load_toAV=pd.concat([test["Loan_ID"],dtest_predprob["Loan_Status"]],axis=1)
 up_load_toAV["Loan_Status"]=np.where(up_load_toAV.Loan_Status==1, 'Y', 'N')
-up_load_toAV.to_csv('up_load_toAV.csv',index=False)
+up_load_toAV.to_csv('up_load_toAV_cat3.csv',index=False)
+# with EMI added there is no improvement on the LB score
 
 
 #-----------------------------------------
@@ -257,3 +272,12 @@ up_load_toAV.to_csv('up_load_toAV.csv',index=False)
 #Thgis model over fits and performed very mad on LB
 #  Accuracy :0.65972
 
+
+
+
+
+
+#-------------------------------------------------------------------------------------------
+# XGB to try finally 
+#-------------------------------------------------------------------------------------------
+#XGB was implemented using R library 
