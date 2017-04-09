@@ -1,0 +1,198 @@
+---
+title: "Loan Prediction"
+author: "kishore"
+date: "3/21/2017"
+output: html_document
+---
+
+#----------------------------------------------------------------------------------------
+#useful resources 
+#https://www.analyticsvidhya.com/blog/2016/12/practical-guide-to-implement-machine-learning-with-caret-package-in-r-with-practice-problem/
+#http://topepo.github.io/caret/using-your-own-model-in-train.html#introduction-1
+#----------------------------------------------------------------------------------------
+
+
+```{r}
+library('caret')
+#https://datahack-prod.s3.ap-south-1.amazonaws.com/test_file/test_Y3wMUE5_7gLdaTN.csv
+#https://datahack-prod.s3.ap-south-1.amazonaws.com/train_file/train_u6lujuX_CVtuZ9i.csv
+train <- read.csv(url('https://datahack-prod.s3.ap-south-1.amazonaws.com/train_file/train_u6lujuX_CVtuZ9i.csv'))
+```
+
+
+Train set Imputation
+```{r}
+train$Gender <- ifelse(train$Gender=='Female',0,1)
+train$Married <- ifelse(train$Married=='Yes',0,1)
+train$Dependents<- as.numeric(train$Dependents)
+train$Education <- ifelse(train$Education=='Graduate',1,0)
+train$Self_Employed<-ifelse(train$Self_Employed=='No',0,1)
+train$Property_Area<-as.character(train$Property_Area)
+train$Property_Area[train$Property_Area=='Rural']<-1
+train$Property_Area[train$Property_Area=='Semiurban']<-2
+train$Property_Area[train$Property_Area=='Urban']<-3
+train$Property_Area=as.numeric(train$Property_Area)
+
+preProcValues <- preProcess(train, method = c("knnImpute","center","scale"))
+train_processed <- predict(preProcValues, train)
+train_processed$Loan_Status<-ifelse(train_processed$Loan_Status=='N',0,1)
+train_processed$Loan_Status<-as.factor(train_processed$Loan_Status)
+```
+
+
+
+Feature selection using backward elemenation
+Resource:
+https://topepo.github.io/caret/recursive-feature-elimination.html#rfe
+```{r}
+y=as.numeric(train_processed[,13])
+
+subsets <- seq(1,11,1)
+ctrl <- rfeControl(functions = lmFuncs,
+                   method = "repeatedcv",
+                   repeats = 5,
+                   verbose = FALSE)
+
+lmProfile <- rfe(x=train_processed[,2:12],
+                 y,
+                 sizes = subsets,
+                 rfeControl = ctrl)
+
+predictors(lmProfile)
+lmProfile
+
+```
+
+Configure predictors and response
+```{r}
+#predictors<-c("Credit_History","LoanAmount","ApplicantIncome","CoapplicantIncome")
+#predictors<-names(trainSet)[!names(trainSet) %in% outcomeName]
+predictors<-c("Credit_History","Married")
+#predictors<-names(train[,2:12])
+predictors<-c("Gender","Married","Dependents","Self_Employed","ApplicantIncome",
+             "CoapplicantIncome","LoanAmount","Loan_Amount_Term","Credit_History","Property_Area")    
+             
+response <- c("Loan_Status")
+```
+
+Test with base models
+```{r}
+model_gbm<-train(train_processed[,predictors],train_processed[,response],method='gbm')
+model_xgb<-train(train_processed[,predictors],train_processed[,response],method='xgbTree')
+#model_nnet<-train(train_processed[,predictors],train_processed[,response],method='nnet')
+#model_glm<-train(train_processed[,predictors],train_processed[,response],method='glm')
+
+
+fitControl <- trainControl(
+  method = "repeatedcv", # Repeated Cross validation   
+  number = 2,            # Five fold cross validation
+  repeats = 1)           # Repeat five times
+
+#Create a little tuned model.
+model_xgb<-train(train_processed[,predictors],
+                 train_processed[,response],
+                 method='xgbTree',
+                 trControl=fitControl,
+                 tuneLength=10)
+
+```
+
+
+Start Tuning based on the parms received above
+```{r}
+fitControl <- trainControl(
+  method = "repeatedcv", # Repeated Cross validation   
+  number = 5,            # Five fold cross validation
+  repeats = 5)           # Repeat five times
+
+
+xgbGrid <- expand.grid(nrounds = 50,
+                       max_depth = 1,
+                       eta = .3,
+                       gamma = 0,
+                       colsample_bytree = .6,
+                       min_child_weight = 1,
+                       subsample = .5
+                       )
+
+model_xgb<-train(train_processed[,predictors],
+                 train_processed[,response],
+                 method='xgbTree',
+                 trControl=fitControl,
+                 grid=xgbGrid)
+
+```
+
+
+Train model general xgboost (not from CARET)
+https://cran.r-project.org/web/packages/xgboost/xgboost.pdf
+```{r}
+library(xgboost)
+require(Matrix)
+parm_list=list(eta=.4,
+               gamma=0,
+               max_depth=2,
+               min_child_weight=1,
+               subsample=.5,
+               colsample_bytree=.6,
+               objective = "binary:logistic"
+               )   
+
+train_processed[,13]<-as.character(train_processed[,13])
+train_processed[,13]<-as.numeric(train_processed[,13])
+
+model_xgb<-xgboost(data=data.matrix(train_processed[,2:12]),
+                    label =as.numeric(train_processed[,13]),
+                    nrounds=50,
+                    params=parm_list)
+
+                 
+```
+
+
+
+
+
+Test set inputation
+```{r}
+test$Gender <- ifelse(test$Gender=='Female',0,1)
+test$Married <- ifelse(test$Married=='Yes',0,1)
+test$Dependents<- as.numeric(test$Dependents)
+test$Education <- ifelse(test$Education=='Graduate',1,0)
+test$Self_Employed<-ifelse(test$Self_Employed=='No',0,1)
+test$Property_Area<-as.character(test$Property_Area)
+test$Property_Area[test$Property_Area=='Rural']<-1
+test$Property_Area[test$Property_Area=='Semiurban']<-2
+test$Property_Area[test$Property_Area=='Urban']<-3
+test$Property_Area=as.numeric(test$Property_Area)
+
+
+preProcValues <- preProcess(test, method = c("knnImpute","center","scale"))
+test_processed <- predict(preProcValues, test)
+
+```
+
+
+Predict with the validation set and submit the LB
+```{r}
+#---------------------------------------------------------------------------------------------------
+# Generate LB Score with CV models
+#---------------------------------------------------------------------------------------------------
+#y_pred<-predict.train(object=model_xgb,test_processed[,predictors],type="raw")
+y_pred<- predict(model_xgb,data.matrix(test_processed[,predictors]))
+
+test_result =as.data.frame(test["Loan_ID"])
+y_pred<- as.data.frame(y_pred)
+test_result['Loan_Status'] = as.character(y_pred$y_pred)
+Loan_file=test_result
+Loan_file$Loan_Status[Loan_file$Loan_Status==1] <- "Y"
+Loan_file$Loan_Status[Loan_file$Loan_Status==0] <- "N
+
+
+write.csv(Loan_file,file='Result_xgb1.csv',row.names=FALSE)
+
+
+```
+
+
+
