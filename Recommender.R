@@ -4,6 +4,21 @@
 
 train <- read.csv("C:/Users/kishore.thadiboyina/OneDrive/dataset/AV/Recommendation_system/train.csv")
 test <- read.csv("C:/Users/kishore.thadiboyina/OneDrive/dataset/AV/Recommendation_system/test.csv")
+#------------------------------------------------------------------
+temp<-setdiff(train$user_id,test$user_id) # 40 New users who are in Train but not in test
+length(temp)
+temp<-setdiff(test$user_id,train$user_id) # 12 users in test but not in train
+length(temp)
+temp<-setdiff(train$problem_id,test$problem_id) #1496 new problems which are in train not in test
+length(temp)
+temp<-setdiff(test$problem_id,train$problem_id) #436 new problems which are in test not in train
+length(temp)
+
+dim(setdiff(train[,1:2],test[,2:3]))
+# [1] 155295      2         # 
+dim(train)
+# [1] 155295      3         # Meaning none of the problem user combination in train repeated in test
+#------------------------------------------------------------------
 
 
 #Following are the two separate aggregated data sets one group by user and the other by problem 
